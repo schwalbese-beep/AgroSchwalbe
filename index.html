@@ -1,0 +1,519 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AgroSchwalbe | Baza SOR i Nawozów</title>
+    <script src="https://cdn.sheetjs.com/xlsx-0.20.0/package/dist/xlsx.full.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.5.25/jspdf.plugin.autotable.min.js"></script>
+    
+    <style>
+        :root { --primary: #27ae60; --dark: #2c3e50; --light: #ecf0f1; --accent: #2980b9; --danger: #e74c3c; --excel: #1f7244; --pdf: #c0392b; --crop-text: #219150; }
+        body { font-family: 'Segoe UI', Tahoma, sans-serif; margin: 0; background: var(--light); color: var(--dark); }
+        header { background: var(--dark); color: white; padding: 15px 20px; display: flex; justify-content: space-between; align-items: center; }
+        .toolbar { background: #1a252f; padding: 10px 20px; display: flex; gap: 8px; border-bottom: 1px solid #444; flex-wrap: wrap; }
+        .btn-tool { padding: 8px 12px; border-radius: 4px; border: none; cursor: pointer; color: white; font-size: 11px; font-weight: bold; text-transform: uppercase; transition: 0.2s; }
+        .btn-tool:hover { filter: brightness(1.2); }
+        .btn-small { padding: 4px 8px; font-size: 9px; margin-left: 5px; }
+        .nav-tabs { display: flex; background: #34495e; position: sticky; top: 0; z-index: 1000; border-bottom: 2px solid var(--primary); overflow-x: auto; }
+        .tab-link { color: #bdc3c7; padding: 15px 20px; cursor: pointer; font-weight: bold; transition: 0.3s; white-space: nowrap; font-size: 13px; border-bottom: 3px solid transparent; }
+        .tab-link.active { color: white; border-bottom: 3px solid var(--primary); background: rgba(255,255,255,0.05); }
+        .content-section { display: none; padding: 15px; max-width: 1600px; margin: 0 auto; }
+        .content-section.active { display: block; }
+        .card { background: white; padding: 15px; border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.05); margin-bottom: 10px; border: 1px solid #ddd; }
+        .field-row:has(input[type="checkbox"]:checked) { background-color: #e8f5e9 !important; border-left: 4px solid var(--primary); }
+        .archive-header { display: flex; justify-content: space-between; align-items: center; padding: 12px 15px; cursor: pointer; background: white; border-radius: 8px; font-weight: bold; }
+        .archive-header.active { border-bottom: 1px solid #eee; border-radius: 8px 8px 0 0; background: #f8f9fa; }
+        .archive-content { display: none; background: white; border-radius: 0 0 8px 8px; border: 1px solid #eee; border-top: none; }
+        .archive-content.open { display: block; }
+        table { width: 100%; border-collapse: collapse; font-size: 0.82em; }
+        th { background: #fcfcfc; padding: 10px; text-align: left; border-bottom: 2px solid #eee; color: #555; }
+        td { padding: 10px; border-bottom: 1px solid #f1f1f1; vertical-align: middle; }
+        .btn-del { color: var(--danger); border: 1px solid var(--danger); background: none; cursor: pointer; border-radius: 4px; padding: 3px 8px; font-size: 10px; font-weight: bold; }
+        .btn-del:hover { background: var(--danger); color: white; }
+        input, select { padding: 8px; border: 1px solid #ccc; border-radius: 5px; width: 100%; box-sizing: border-box; }
+        .field-row { display: grid; grid-template-columns: 30px 1.2fr 0.8fr 1fr 1fr 100px; align-items: center; padding: 10px 15px; border-bottom: 1px solid #eee; gap: 10px; }
+        .sor-grid-container { display: grid; grid-template-columns: repeat(5, 1fr); gap: 8px; margin-top: 15px; }
+        .sor-item { display: flex; justify-content: space-between; align-items: center; padding: 4px 8px; background: #fff; border: 1px solid #eee; border-left: 3px solid var(--primary); border-radius: 3px; font-size: 0.75em; }
+        .search-bar-container { display: flex; gap: 10px; margin-bottom: 15px; }
+        .crop-name { color: var(--crop-text); font-weight: 600; }
+        @media (max-width: 1300px) { .sor-grid-container { grid-template-columns: repeat(3, 1fr); } }
+        @media (max-width: 800px) { .sor-grid-container { grid-template-columns: repeat(2, 1fr); } .search-bar-container { flex-direction: column; } }
+    </style>
+</head>
+<body>
+
+<header>
+    <h2 style="margin:0;">🚜 AgroSchwalbe</h2>
+</header>
+
+<div class="toolbar">
+    <button class="btn-tool" style="background: var(--excel);" onclick="exportToExcel()">Pełny Excel</button>
+    <button class="btn-tool" style="background: var(--pdf);" onclick="exportToPDF()">Pełny PDF</button>
+    <button class="btn-tool" style="background: var(--primary);" onclick="exportToJSON()">Kopia Zapasu</button>
+    <button class="btn-tool" style="background: #555;" onclick="document.getElementById('importInput').click()">Wczytaj Kopię</button>
+    <input type="file" id="importInput" style="display:none" accept=".json" onchange="importData(event)">
+</div>
+
+<div class="nav-tabs">
+    <div class="tab-link active" onclick="openTab(event, 'tab-rejestracja')">REJESTRACJA</div>
+    <div class="tab-link" onclick="openTab(event, 'tab-historia')">ARCHIWUM</div>
+    <div class="tab-link" onclick="openTab(event, 'tab-pola')">POLA</div>
+    <div class="tab-link" onclick="openTab(event, 'tab-sor')">ŚRODKI</div>
+    <div class="tab-link" onclick="openTab(event, 'tab-nawozy')">NAWOZY</div>
+</div>
+
+<div id="tab-rejestracja" class="content-section active">
+    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(400px, 1fr)); gap: 15px;">
+        <div class="card">
+            <div style="display: flex; justify-content: space-between; align-items: center;">
+                <h3>1. Wybierz Pola</h3>
+                <div>
+                    <button onclick="toggleSelectAllFields(true)" style="font-size: 10px; cursor: pointer; padding: 2px 5px;">Wszystkie</button>
+                    <button onclick="toggleSelectAllFields(false)" style="font-size: 10px; cursor: pointer; padding: 2px 5px;">Odznacz</button>
+                </div>
+            </div>
+            <div id="fields-list-container" style="max-height: 400px; overflow-y: auto; border: 1px solid #eee; border-radius: 5px;"></div>
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top:10px;">
+                <select id="task-type" onchange="updateProductDatalist()"><option>Oprysk</option><option>Nawożenie</option><option>Siew</option><option>Uprawa</option></select>
+                <input type="date" id="task-date">
+            </div>
+        </div>
+        <div class="card">
+            <h3>2. Szczegóły zabiegu</h3>
+            <input list="product-datalist" id="task-product" placeholder="Wpisz lub wybierz produkt...">
+            <datalist id="product-datalist"></datalist>
+            
+            <div id="split-tool-ui" style="display: none; background: #e8f5e9; padding: 12px; border-radius: 8px; margin-top: 10px; border: 1px solid #c8e6c9;">
+                <div style="display: flex; gap: 10px; align-items: flex-end;">
+                    <div style="flex: 2;">
+                        <label style="font-size: 11px; font-weight: bold;">DAWKA NA 1 HA:</label>
+                        <input type="number" id="dose-per-ha" step="0.01" oninput="calculateTotalDoses()" placeholder="np. 0.5">
+                    </div>
+                    <div style="flex: 1;">
+                        <label style="font-size: 11px; font-weight: bold;">JEDN.:</label>
+                        <select id="dose-unit" onchange="calculateTotalDoses()">
+                            <option value="l">l</option>
+                            <option value="kg">kg</option>
+                            <option value="t">t</option>
+                            <option value="szt">szt</option>
+                        </select>
+                    </div>
+                </div>
+            </div>
+
+            <div id="dynamic-inputs-container" style="margin-top:10px;"></div>
+            <button style="background: var(--primary); color: white; width: 100%; height: 45px; border: none; border-radius: 5px; cursor: pointer; font-weight: bold; margin-top: 15px;" onclick="saveBulkEntries()">ZAPISZ ZABIEG</button>
+        </div>
+    </div>
+</div>
+
+<div id="tab-historia" class="content-section">
+    <div class="search-bar-container">
+        <input type="text" id="history-search" placeholder="🔍 Szukaj po uprawie, odmianie, produkcie..." oninput="renderHistoryCards()" style="flex: 3; border-radius: 20px;">
+        <select id="history-sort" onchange="renderHistoryCards()" style="flex: 1; border-radius: 20px; font-weight: bold;">
+            <option value="date-desc">📅 Data (najnowsze)</option>
+            <option value="date-asc">📅 Data (najstarsze)</option>
+            <option value="field-asc">🚜 Pole (A-Z)</option>
+            <option value="crop-asc">🌿 Uprawa (A-Z)</option>
+        </select>
+    </div>
+    <div id="archive-container"></div>
+</div>
+
+<div id="tab-pola" class="content-section">
+    <div class="card" id="field-form-container">
+        <h3 id="field-form-title">Zarządzaj Polem</h3>
+        <input type="hidden" id="edit-field-id">
+        <div style="display: grid; grid-template-columns: 1.5fr 0.8fr 1fr 1fr; gap: 10px;">
+            <input type="text" id="new-name" placeholder="Nazwa pola">
+            <input type="number" id="new-area" step="0.01" placeholder="Areał (ha)">
+            <select id="new-crop"></select>
+            <input type="text" id="new-variety" placeholder="Odmiana">
+        </div>
+        <div style="display: flex; gap: 10px; margin-top: 10px;">
+            <button id="btn-field-main" style="background: var(--primary); color: white; flex: 2; padding: 10px; border: none; cursor: pointer; border-radius: 5px; font-weight: bold;" onclick="saveField()">ZAPISZ POLE</button>
+            <button id="btn-field-cancel" style="display: none; background: #95a5a6; color: white; flex: 1; padding: 10px; border: none; cursor: pointer; border-radius: 5px; font-weight: bold;" onclick="cancelEditField()">ANULUJ</button>
+        </div>
+    </div>
+    <div id="fields-grid"></div>
+</div>
+
+<div id="tab-sor" class="content-section">
+    <div class="card">
+        <h3>Baza Środków Ochrony Roślin</h3>
+        <div style="display: flex; gap: 10px; margin-bottom: 15px;">
+            <input type="text" id="sor-new-name" placeholder="Dodaj nowy środek...">
+            <button onclick="addSorToBase()" style="background: var(--primary); color: white; border: none; padding: 0 20px; border-radius: 5px; cursor: pointer; font-weight: bold;">DODAJ</button>
+        </div>
+        <input type="text" id="sor-search-list" placeholder="🔍 Szukaj w bazie SOR..." oninput="renderSorGrid()" style="margin-bottom: 15px; background: #f0f4f8; border: 1px solid var(--primary);">
+        <div id="sor-grid" class="sor-grid-container"></div>
+    </div>
+</div>
+
+<div id="tab-nawozy" class="content-section">
+    <div class="card">
+        <h3>Baza Nawozów</h3>
+        <div style="display: flex; gap: 10px; margin-bottom: 15px;">
+            <input type="text" id="fert-new-name" placeholder="Dodaj nowy nawóz...">
+            <button onclick="addFertToBase()" style="background: var(--accent); color: white; border: none; padding: 0 20px; border-radius: 5px; cursor: pointer; font-weight: bold;">DODAJ</button>
+        </div>
+        <input type="text" id="fert-search-list" placeholder="🔍 Szukaj w bazie nawozów..." oninput="renderFertGrid()" style="margin-bottom: 15px; background: #f0f4f8; border: 1px solid var(--accent);">
+        <div id="fert-grid" class="sor-grid-container"></div>
+    </div>
+</div>
+
+<script>
+    const importedSor = ["Adengo 315 SC", "Amistar 250 SC", "Axial 50 EC", "Bizon", "Boxer 800 EC", "Chwastox Extra 300 SL", "Coragen 200 SC", "Huzar Active 387 OD", "Lumax 537,5 SE", "Moddus 250 EC", "Mustang 306 SE", "Puma Universal 069 EW", "RoundUp 360 SL"];
+    const defaultFertilizers = ["Mocznik", "Saletra Amonowa", "Polifoska 6", "Korn-Kali", "RSM 32%", "Siarczan Magnezu"];
+    const cropsList = ["Pszenica ozima", "Rzepak ozimy", "Kukurydza", "Jęczmień", "Ziemniak", "Burak cukrowy", "Łąka", "Inna"];
+
+    let fields = JSON.parse(localStorage.getItem('agro_fields')) || [];
+    let logs = JSON.parse(localStorage.getItem('agro_logs')) || [];
+    let customSor = JSON.parse(localStorage.getItem('agro_sor_list')) || [...importedSor];
+    let customFert = JSON.parse(localStorage.getItem('agro_fert_list')) || [...defaultFertilizers];
+    let openCards = new Set();
+
+    function init() {
+        const cropSelect = document.getElementById('new-crop');
+        if(cropSelect) cropSelect.innerHTML = cropsList.map(c => `<option>${c}</option>`).join('');
+        document.getElementById('task-date').valueAsDate = new Date();
+        renderAll();
+    }
+
+    function saveLocal() {
+        localStorage.setItem('agro_fields', JSON.stringify(fields));
+        localStorage.setItem('agro_logs', JSON.stringify(logs));
+        localStorage.setItem('agro_sor_list', JSON.stringify(customSor));
+        localStorage.setItem('agro_fert_list', JSON.stringify(customFert));
+        renderAll();
+    }
+
+    function renderAll() {
+        document.getElementById('fields-list-container').innerHTML = fields.map(f => `
+            <div class="field-row">
+                <input type="checkbox" name="field-select" value="${f.name}" data-id="${f.id}" data-area="${f.area}" onchange="updateDynamicInputs()">
+                <strong>${f.name}</strong> <span>${f.area} ha</span> <span class="crop-name">${f.crop}</span>
+            </div>`).join('');
+        
+        document.getElementById('fields-grid').innerHTML = fields.map(f => `
+            <div class="card" style="display:flex; justify-content:space-between; align-items:center;">
+                <div><strong>${f.name}</strong> - ${f.area} ha <br> <small><span class="crop-name">${f.crop}</span> | ${f.variety || ''}</small></div>
+                <div style="display:flex; gap:5px;">
+                    <button class="btn-tool" style="background: var(--accent);" onclick="editField(${f.id})">EDYTUJ</button>
+                    <button class="btn-del" onclick="deleteField(${f.id})">USUŃ</button>
+                </div>
+            </div>`).join('');
+
+        renderSorGrid();
+        renderFertGrid();
+        renderHistoryCards();
+        updateProductDatalist();
+    }
+
+    function toggleSelectAllFields(status) {
+        document.querySelectorAll('input[name="field-select"]').forEach(cb => cb.checked = status);
+        updateDynamicInputs();
+    }
+
+    function updateDynamicInputs() {
+        const selected = Array.from(document.querySelectorAll('input[name="field-select"]:checked'));
+        document.getElementById('split-tool-ui').style.display = selected.length ? 'block' : 'none';
+        const unit = document.getElementById('dose-unit')?.value || 'l';
+        document.getElementById('dynamic-inputs-container').innerHTML = selected.map(cb => `
+            <div class="field-row" style="background:#f9f9f9; margin-top:5px; grid-template-columns: 1fr 100px 30px;">
+                <span><strong>${cb.value}</strong></span>
+                <input type="number" id="val-${cb.dataset.id}" step="0.01">
+                <span style="font-size: 0.8em; color: #777;">${unit}</span>
+            </div>`).join('');
+        calculateTotalDoses();
+    }
+
+    function calculateTotalDoses() {
+        const dose = parseFloat(document.getElementById('dose-per-ha').value) || 0;
+        const unit = document.getElementById('dose-unit').value;
+        document.querySelectorAll('input[name="field-select"]:checked').forEach(cb => {
+            const area = parseFloat(cb.dataset.area) || 0;
+            const input = document.getElementById(`val-${cb.dataset.id}`);
+            if(input) input.value = (dose * area).toFixed(2);
+            const unitLabel = input.nextElementSibling;
+            if(unitLabel) unitLabel.innerText = unit;
+        });
+    }
+
+    function saveBulkEntries() {
+        const selected = Array.from(document.querySelectorAll('input[name="field-select"]:checked'));
+        const product = document.getElementById('task-product').value;
+        const doseHa = document.getElementById('dose-per-ha').value;
+        const unit = document.getElementById('dose-unit').value;
+        const type = document.getElementById('task-type').value;
+        const date = document.getElementById('task-date').value;
+
+        if (!product || !selected.length || !date) return alert("Wybierz pola, produkt i datę!");
+
+        selected.forEach(cb => {
+            const fieldId = parseInt(cb.dataset.id);
+            const field = fields.find(f => f.id === fieldId);
+            const inputVal = document.getElementById(`val-${fieldId}`).value;
+
+            logs.push({
+                id: Date.now() + Math.random(),
+                fieldId: field.id,
+                fieldName: field.name,
+                date: date,
+                type: type,
+                crop_at_time: field.crop,
+                variety_at_time: field.variety || "---",
+                product: product,
+                dose_per_ha: doseHa ? `${doseHa} ${unit}/ha` : "---",
+                dose_total: `${inputVal} ${unit}`
+            });
+        });
+        
+        if (type === "Nawożenie" && !customFert.includes(product)) customFert.push(product);
+        else if (type !== "Nawożenie" && !customSor.includes(product)) customSor.push(product);
+
+        saveLocal();
+        clearRegistrationForm();
+        alert("Zabieg zapisany!");
+    }
+
+    function renderHistoryCards() {
+        const container = document.getElementById('archive-container');
+        const s = document.getElementById('history-search').value.toLowerCase();
+        const sortType = document.getElementById('history-sort').value;
+        container.innerHTML = "";
+
+        let sortedFields = [...fields];
+        if (sortType === 'field-asc') sortedFields.sort((a, b) => a.name.localeCompare(b.name));
+
+        sortedFields.forEach(f => {
+            let fLogs = logs.filter(l => l.fieldId === f.id && (
+                l.product.toLowerCase().includes(s) || 
+                l.fieldName.toLowerCase().includes(s) ||
+                l.crop_at_time.toLowerCase().includes(s) ||
+                l.variety_at_time.toLowerCase().includes(s)
+            ));
+
+            if(s && fLogs.length === 0 && !f.name.toLowerCase().includes(s)) return;
+            fLogs.sort((a, b) => sortType === 'date-asc' ? new Date(a.date) - new Date(b.date) : new Date(b.date) - new Date(a.date));
+
+            const isOpen = openCards.has(f.id);
+            const card = document.createElement('div');
+            card.className = 'card'; card.style.padding = '0';
+            card.innerHTML = `
+                <div class="archive-header ${isOpen ? 'active' : ''}" onclick="toggleCard(${f.id})">
+                    <span>
+                        <strong>${f.name}</strong> <small>(${f.area} ha)</small>
+                    </span> 
+                    <div style="display:flex; align-items:center;">
+                        <button class="btn-tool btn-small" style="background:var(--excel);" onclick="event.stopPropagation(); exportFieldToExcel(${f.id})">EXCEL Pole</button>
+                        <button class="btn-tool btn-small" style="background:var(--pdf);" onclick="event.stopPropagation(); exportFieldToPDF(${f.id})">PDF Pole</button>
+                        <span style="margin-left:15px;">${isOpen ? '▲' : '▼'}</span>
+                    </div>
+                </div>
+                <div class="archive-content ${isOpen ? 'open' : ''}">
+                    <table>
+                        <thead>
+                            <tr><th>Data</th><th>Uprawa (Odmiana)</th><th>Zabieg</th><th>Produkt</th><th>Dawka/ha</th><th>Suma</th><th style="text-align:right;">Akcja</th></tr>
+                        </thead>
+                        <tbody>
+                            ${fLogs.map(l => `<tr>
+                                <td>${l.date}</td>
+                                <td><strong class="crop-name">${l.crop_at_time}</strong> <br><small>${l.variety_at_time}</small></td>
+                                <td>${l.type}</td>
+                                <td>${l.product}</td>
+                                <td>${l.dose_per_ha}</td>
+                                <td>${l.dose_total}</td>
+                                <td style="text-align:right;"><button class="btn-del" onclick="deleteLog('${l.id}')">USUŃ</button></td>
+                            </tr>`).join('')}
+                        </tbody>
+                    </table>
+                </div>`;
+            container.appendChild(card);
+        });
+    }
+
+    // --- NOWE FUNKCJE EKSPORTU DLA POJEDYNCZEGO POLA ---
+
+    function exportFieldToPDF(fieldId) {
+        const field = fields.find(f => f.id === fieldId);
+        const fieldLogs = logs.filter(l => l.fieldId === fieldId).sort((a,b) => new Date(b.date) - new Date(a.date));
+        
+        if (fieldLogs.length === 0) return alert("Brak danych dla tego pola!");
+
+        const { jsPDF } = window.jspdf;
+        const doc = new jsPDF();
+        const now = new Date().toLocaleDateString('pl-PL');
+
+        doc.setFontSize(16);
+        doc.text(`AgroSchwalbe - Historia pola: ${field.name}`, 14, 20);
+        doc.setFontSize(10);
+        doc.text(`Uprawa: ${field.crop} | Areał: ${field.area} ha`, 14, 28);
+
+        doc.autoTable({
+            head: [['Data', 'Zabieg', 'Produkt', 'Dawka/ha', 'Suma']],
+            body: fieldLogs.map(l => [l.date, l.type, l.product, l.dose_per_ha, l.dose_total]),
+            startY: 35,
+            styles: { fontSize: 8 },
+            headStyles: { fillStyle: [39, 174, 96] }
+        });
+        doc.save(`AgroSchwalbe_${field.name}_${now}.pdf`);
+    }
+
+    function exportFieldToExcel(fieldId) {
+        const field = fields.find(f => f.id === fieldId);
+        const fieldLogs = logs.filter(l => l.fieldId === fieldId).sort((a,b) => new Date(b.date) - new Date(a.date));
+        
+        if (fieldLogs.length === 0) return alert("Brak danych!");
+
+        const ws = XLSX.utils.json_to_sheet(fieldLogs.map(l => ({ 
+            Data: l.date, Pole: l.fieldName, Uprawa: l.crop_at_time, Typ: l.type, Produkt: l.product, DawkaHa: l.dose_per_ha, Suma: l.dose_total 
+        })));
+        const wb = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(wb, ws, "Historia Pola");
+        XLSX.writeFile(wb, `AgroSchwalbe_${field.name}.xlsx`);
+    }
+
+    // --- STARE FUNKCJE PEŁNEGO EKSPORTU ---
+
+    function exportToPDF() {
+        if (logs.length === 0) return alert("Brak danych!");
+        const { jsPDF } = window.jspdf;
+        const doc = new jsPDF();
+        doc.setFontSize(16);
+        doc.text("Ewidencja Zabiegów AgroSchwalbe - CAŁOŚĆ", 14, 20);
+        doc.autoTable({
+            head: [['Data', 'Pole', 'Uprawa', 'Zabieg', 'Produkt', 'Suma']],
+            body: logs.sort((a,b) => new Date(b.date) - new Date(a.date)).map(l => [
+                l.date, l.fieldName, l.crop_at_time, l.type, l.product, l.dose_total
+            ]),
+            startY: 30,
+            styles: { fontSize: 7 },
+            headStyles: { fillStyle: [44, 62, 80] }
+        });
+        doc.save(`Ewidencja_AgroSchwalbe_Pelna.pdf`);
+    }
+
+    function exportToExcel() { 
+        if(logs.length === 0) return alert("Brak danych!");
+        const ws = XLSX.utils.json_to_sheet(logs.map(l => ({ 
+            Data: l.date, Pole: l.fieldName, Uprawa: l.crop_at_time, Typ: l.type, Produkt: l.product, Suma: l.dose_total 
+        })));
+        const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, "Archiwum"); XLSX.writeFile(wb, "Ewidencja_AgroSchwalbe_Pelna.xlsx"); 
+    }
+
+    // --- FUNKCJE POMOCNICZE ---
+
+    function exportToJSON() {
+        const blob = new Blob([JSON.stringify({ fields, logs, customSor, customFert })], {type: "application/json"});
+        const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = "AgroSchwalbe_Backup.json"; a.click();
+    }
+
+    function importData(e) {
+        const r = new FileReader();
+        r.onload = x => {
+            const d = JSON.parse(x.target.result);
+            fields = d.fields; logs = d.logs; customSor = d.customSor; customFert = d.customFert;
+            saveLocal(); location.reload();
+        };
+        r.readAsText(e.target.files[0]);
+    }
+
+    function clearRegistrationForm() {
+        document.querySelectorAll('input[name="field-select"]').forEach(cb => cb.checked = false);
+        document.getElementById('task-product').value = "";
+        document.getElementById('dose-per-ha').value = "";
+        document.getElementById('split-tool-ui').style.display = 'none';
+        document.getElementById('dynamic-inputs-container').innerHTML = "";
+        renderAll();
+    }
+
+    function updateProductDatalist() {
+        const type = document.getElementById('task-type').value;
+        const datalist = document.getElementById('product-datalist');
+        let products = (type === "Nawożenie") ? customFert : customSor;
+        datalist.innerHTML = products.sort().map(p => `<option value="${p}">`).join('');
+    }
+
+    function saveField() {
+        const idInput = document.getElementById('edit-field-id'), n = document.getElementById('new-name'), a = document.getElementById('new-area'), c = document.getElementById('new-crop'), v = document.getElementById('new-variety');
+        if(!n.value || !a.value) return;
+        if(idInput.value) {
+            const i = fields.findIndex(f => f.id == idInput.value);
+            if(i !== -1) { fields[i].name = n.value; fields[i].area = parseFloat(a.value); fields[i].crop = c.value; fields[i].variety = v.value; }
+        } else { fields.push({ id: Date.now(), name: n.value, area: parseFloat(a.value), crop: c.value, variety: v.value }); }
+        cancelEditField(); saveLocal();
+    }
+
+    function editField(id) {
+        const f = fields.find(x => x.id === id);
+        document.getElementById('field-form-title').innerText = "Edytuj Pole";
+        document.getElementById('edit-field-id').value = f.id;
+        document.getElementById('new-name').value = f.name;
+        document.getElementById('new-area').value = f.area;
+        document.getElementById('new-crop').value = f.crop;
+        document.getElementById('new-variety').value = f.variety || "";
+        document.getElementById('btn-field-main').innerText = "ZAPISZ ZMIANY";
+        document.getElementById('btn-field-cancel').style.display = "block";
+    }
+
+    function cancelEditField() {
+        document.getElementById('field-form-title').innerText = "Zarządzaj Polem";
+        document.getElementById('edit-field-id').value = "";
+        document.getElementById('new-name').value = "";
+        document.getElementById('new-area').value = "";
+        document.getElementById('new-variety').value = "";
+        document.getElementById('btn-field-main').innerText = "ZAPISZ POLE";
+        document.getElementById('btn-field-cancel').style.display = "none";
+    }
+
+    function renderSorGrid() {
+        const container = document.getElementById('sor-grid');
+        const s = document.getElementById('sor-search-list')?.value.toLowerCase() || "";
+        const filtered = customSor.filter(x => x.toLowerCase().includes(s)).sort();
+        container.innerHTML = filtered.map(item => `
+            <div class="sor-item">
+                <span>${item}</span>
+                <button class="btn-del" style="padding: 1px 4px; border:none;" onclick="deleteFromBase('${item}', 'sor')">×</button>
+            </div>`).join('');
+    }
+
+    function renderFertGrid() {
+        const container = document.getElementById('fert-grid');
+        const s = document.getElementById('fert-search-list')?.value.toLowerCase() || "";
+        const filtered = customFert.filter(x => x.toLowerCase().includes(s)).sort();
+        container.innerHTML = filtered.map(item => `
+            <div class="sor-item" style="border-left-color: var(--accent)">
+                <span>${item}</span>
+                <button class="btn-del" style="padding: 1px 4px; border:none;" onclick="deleteFromBase('${item}', 'fert')">×</button>
+            </div>`).join('');
+    }
+
+    function deleteFromBase(name, type) {
+        if(!confirm(`Usunąć ${name}?`)) return;
+        if(type === 'sor') customSor = customSor.filter(x => x !== name);
+        else customFert = customFert.filter(x => x !== name);
+        saveLocal();
+    }
+
+    function addSorToBase() {
+        const i = document.getElementById('sor-new-name');
+        if(i.value && !customSor.includes(i.value)) { customSor.push(i.value); i.value = ''; saveLocal(); }
+    }
+
+    function addFertToBase() {
+        const i = document.getElementById('fert-new-name');
+        if(i.value && !customFert.includes(i.value)) { customFert.push(i.value); i.value = ''; saveLocal(); }
+    }
+
+    function toggleCard(id) { if(openCards.has(id)) openCards.delete(id); else openCards.add(id); renderHistoryCards(); }
+    function openTab(e, n) { document.querySelectorAll(".content-section, .tab-link").forEach(x => x.classList.remove("active")); document.getElementById(n).classList.add("active"); e.currentTarget.classList.add("active"); }
+    function deleteField(id) { if(confirm("Usunąć pole?")) { logs = logs.filter(l => l.fieldId !== id); fields = fields.filter(f => f.id !== id); saveLocal(); } }
+    function deleteLog(id) { if(confirm("Usunąć wpis?")) { logs = logs.filter(l => String(l.id) !== String(id)); saveLocal(); } }
+
+    window.onload = init;
+</script>
+</body>
+</html>
